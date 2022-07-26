@@ -59,16 +59,22 @@ wss.on("connection", (ws, req) => {
             switch(messageBody.operation) {
                 case 'authenticate':
                     logger.debug(`LW App has sent us: ${event.data}`)
-                    if (messageBody.items[0].success = true) { // Successfully authed with LW API
+                    if (messageBody.items[0].success == true) { // Successfully authed with LW API
                         lw_is_auth = true
                         logger.info("Successfully Authenticated with LW")
                     }
                     break;
                 default:
+                    if ((messageBody.items[0].success == false) && (messageBody.items[0].error.code == "200")) {
+                        lw_is_auth = false
+                        logger.info("Error, not authenticated with LW")
+                    }
                     logger.debug(`LW App has sent us: ${event.data}`);
                     break;
             }
-            webSockets['haclient'].send(event.data)
+            if (webSockets['haclient']) {
+                webSockets['haclient'].send(event.data)
+            }
         });
         logger.info(`New Application Client Connected ${ws._socket.remoteAddress}`);
     }
