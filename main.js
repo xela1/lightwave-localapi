@@ -7,7 +7,7 @@ winston.level = 'debug';
 const logConfiguration = {
     'transports': [
         new winston.transports.Console({
-            level: 'debug'
+            level: 'info'
         })
     ]
 };
@@ -71,6 +71,7 @@ wss.on("connection", (ws, req) => {
                     logger.debug(`LW App has sent us: ${event.data}`)
                     groupIds=messageBody.items[0].payload.groupIds[0]
                     groupId=groupIds.split('-')[0]
+                    logger.info(`Group ID ${groupId} received`)
                     break;
                 default:
                     if ((messageBody.items[0].success == false) && (messageBody.items[0].error.code == "200")) {
@@ -91,7 +92,6 @@ wss.on("connection", (ws, req) => {
         const messageBody = JSON.parse(data);
         const operation = messageBody.operation
         if (req.url == '/sockets') {
-            console.log(`Hub has sent us: ${data}`)
             switch(operation) {
                 case 'authenticate':
                     webSockets[messageBody.senderId] = ws
@@ -102,32 +102,30 @@ wss.on("connection", (ws, req) => {
                     // ws_lw.send(fwdMessage)
                     break;
                 case 'event':
-                    console.log('event received from Hub')
-                    // ws_lw.send(data)
-                    if (groupId) { // can't send event without the GroupID so we'll need to get LW to do it
-                        messageBody.items.forEach(element => {
-                            var response = {}
-                            response['version']=messageBody.version
-                            response['senderId']=messageBody.senderId
-                            response['transactionId']=messageBody.transactionId
-                            response['direction']='notification'
-                            response['class']=messageBody.class
-                            response['operation']=messageBody.operation
-                            response['items'] = [];
-                            element['payload']['featureId'] = groupId + '-' + element['payload']['featureId'] + '-' + messageBody.senderId + '+1'
-                            element['success'] = 'true'
-                            response['items'].push(element)
-                            responsejson = JSON.stringify(response);
-                            // console.log(responsejson);
+                    messageBody.items.forEach(element => {
+                        logger.info(`Event received from Hub - Feature ${element['payload']['featureId']} - Value ${element['payload']['value']} `)
+                        var response = {}
+                        response['version']=messageBody.version
+                        response['senderId']=messageBody.senderId
+                        response['transactionId']=messageBody.transactionId
+                        response['direction']='notification'
+                        response['class']=messageBody.class
+                        response['operation']=messageBody.operation
+                        response['items'] = [];
+                        element['payload']['featureId'] = groupId + '-' + element['payload']['featureId'] + '-' + messageBody.senderId + '+1'
+                        element['success'] = 'true'
+                        response['items'].push(element)
+                        responsejson = JSON.stringify(response);
+                        if (groupId) { // can't send event without the GroupID so we'll need to get LW to do it
                             if (webSockets['haclient']) {
                                 webSockets['haclient'].send(responsejson)
                             } else {
                                 logger.info("No clients connected, not sending events")
                             }
+                        } else { // not received groupId yet, send to LW API to deal with
+                            ws_lw.send(data)
+                        }
                     });
-                    } else { // not received groupId yet, send to LW API to deal with
-                        ws_lw.send(data)
-                    }
                     break;
                 case 'write':
                     // webSockets['haclient'].send(data)
@@ -138,10 +136,11 @@ wss.on("connection", (ws, req) => {
                     ws_lw.send(data)
                     break;
                 default:
+                    
                     ws_lw.send(data)
                     break;
             }
-
+            logger.debug(`Hub has sent us: ${data}`)
             
         }
         if (req.url == '/') {
