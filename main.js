@@ -32,6 +32,7 @@ ws_lw.addEventListener("open", () =>{
 
 // Create App Client
 const ws_lw_app = new WebSocket("wss://v1-linkplus-app.lightwaverf.com");
+var lw_is_auth = false
 ws_lw_app.addEventListener("open", () =>{
     logger.info("We are connected to App API");
 });
@@ -54,7 +55,19 @@ wss.on("connection", (ws, req) => {
     }
     if (req.url == '/') {
         ws_lw_app.addEventListener('message', function (event) {
-            console.log(`LW App has sent us: ${event.data}`);
+            const messageBody = JSON.parse(event.data);
+            switch(messageBody.operation) {
+                case 'authenticate':
+                    logger.debug(`LW App has sent us: ${event.data}`)
+                    if (messageBody.items[0].success = true) { // Successfully authed with LW API
+                        lw_is_auth = true
+                        logger.info("Successfully Authenticated with LW")
+                    }
+                    break;
+                default:
+                    logger.debug(`LW App has sent us: ${event.data}`);
+                    break;
+            }
             webSockets['haclient'].send(event.data)
         });
         logger.info(`New Application Client Connected ${ws._socket.remoteAddress}`);
@@ -91,7 +104,9 @@ wss.on("connection", (ws, req) => {
                         response['items'].push(element)
                         responsejson = JSON.stringify(response);
                         // console.log(responsejson);
-                        webSockets['haclient'].send(responsejson)
+                        if (webSockets['haclient']) {
+                            webSockets['haclient'].send(responsejson)
+                        }
                     });
                     break;
                 case 'write':
@@ -113,11 +128,17 @@ wss.on("connection", (ws, req) => {
             switch(operation) {
                 case 'authenticate': // proxy this
                     webSockets['haclient'] = ws
-                    logger.info('App Client: Authenticate')
+                    logger.info('App Client: Requested Authenticate')
                     logger.debug(`App Client Message: ${data}`)
-                    // ws_lw_app.close()
-                    // ws_lw_app.open
-                    ws_lw_app.send(data)
+                    if (lw_is_auth == false) {
+                        ws_lw_app.send(data)
+                    } else {
+                        auth_json = '{"version":1,"senderId":"1.ip=10=192=22=140*eu=west=1*compute*internal=82149","direction":"response","source":"_channel","items":[{"itemId":0,"success":true,"payload":{"workerUniqueId":"ip=10=192=22=140*eu=west=1*compute*internal=82149","serverName":"i-0b3c24bf89033f71e","handlerId":"user.7aa9ada8-9914-4f8f-9bd4-80f85593a54b.eb0d95dc-83f5-4b3c-9691-dcdbe9315987"}}],"class":"user","operation":"authenticate","transactionId":1}';
+                        auth_json_parsed = JSON.parse(auth_json);
+                        auth_json_parsed.transactionId = messageBody.transactionId
+                        response_json = JSON.stringify(auth_json_parsed);
+                        webSockets['haclient'].send(response_json)
+                    }               
                     break;
                 case 'read': // HA requesting state
                     if (messageBody.class == 'feature') { // Send feature request direct to hub
