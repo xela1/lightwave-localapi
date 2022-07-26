@@ -62,6 +62,9 @@ wss.on("connection", (ws, req) => {
                     if (messageBody.items[0].success == true) { // Successfully authed with LW API
                         lw_is_auth = true
                         logger.info("Successfully Authenticated with LW")
+                        // Lets request groups from LW rather than waiting for them
+                        var group_json='{"class":"user","operation":"rootGroups","version":1,"senderId":"29db9beb-fb3f-475c-929c-68eaa21ea80e","transactionId":1,"direction":"request","items":[{"itemId":1,"payload":{}}]}'
+                        ws_lw_app.send(group_json)
                     }
                     break;
                 case 'rootGroups':
@@ -118,6 +121,8 @@ wss.on("connection", (ws, req) => {
                             // console.log(responsejson);
                             if (webSockets['haclient']) {
                                 webSockets['haclient'].send(responsejson)
+                            } else {
+                                logger.info("No clients connected, not sending events")
                             }
                     });
                     } else { // not received groupId yet, send to LW API to deal with
