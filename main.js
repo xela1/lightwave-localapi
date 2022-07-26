@@ -1,5 +1,5 @@
 // Set Group ID
-const groupId = '5df8b6728522075debd21ad8'
+var groupId = ''
 
 // Setup Logging
 const winston = require('winston');
@@ -64,6 +64,11 @@ wss.on("connection", (ws, req) => {
                         logger.info("Successfully Authenticated with LW")
                     }
                     break;
+                case 'rootGroups':
+                    logger.debug(`LW App has sent us: ${event.data}`)
+                    groupIds=messageBody.items[0].payload.groupIds[0]
+                    groupId=groupIds.split('-')[0]
+                    break;
                 default:
                     if ((messageBody.items[0].success == false) && (messageBody.items[0].error.code == "200")) {
                         lw_is_auth = false
@@ -96,24 +101,28 @@ wss.on("connection", (ws, req) => {
                 case 'event':
                     console.log('event received from Hub')
                     // ws_lw.send(data)
-                    messageBody.items.forEach(element => {
-                        var response = {}
-                        response['version']=messageBody.version
-                        response['senderId']=messageBody.senderId
-                        response['transactionId']=messageBody.transactionId
-                        response['direction']='notification'
-                        response['class']=messageBody.class
-                        response['operation']=messageBody.operation
-                        response['items'] = [];
-                        element['payload']['featureId'] = groupId + '-' + element['payload']['featureId'] + '-' + messageBody.senderId + '+1'
-                        element['success'] = 'true'
-                        response['items'].push(element)
-                        responsejson = JSON.stringify(response);
-                        // console.log(responsejson);
-                        if (webSockets['haclient']) {
-                            webSockets['haclient'].send(responsejson)
-                        }
+                    if (groupId) { // can't send event without the GroupID so we'll need to get LW to do it
+                        messageBody.items.forEach(element => {
+                            var response = {}
+                            response['version']=messageBody.version
+                            response['senderId']=messageBody.senderId
+                            response['transactionId']=messageBody.transactionId
+                            response['direction']='notification'
+                            response['class']=messageBody.class
+                            response['operation']=messageBody.operation
+                            response['items'] = [];
+                            element['payload']['featureId'] = groupId + '-' + element['payload']['featureId'] + '-' + messageBody.senderId + '+1'
+                            element['success'] = 'true'
+                            response['items'].push(element)
+                            responsejson = JSON.stringify(response);
+                            // console.log(responsejson);
+                            if (webSockets['haclient']) {
+                                webSockets['haclient'].send(responsejson)
+                            }
                     });
+                    } else { // not received groupId yet, send to LW API to deal with
+                        ws_lw.send(data)
+                    }
                     break;
                 case 'write':
                     // webSockets['haclient'].send(data)
