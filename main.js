@@ -73,10 +73,6 @@ var connect_lw_api = function(){
 };
 connect_lw_api();
 
-ws_lw_app.addEventListener("open", () =>{
-    logger.info("We are connected to App API");
-});
-
 var webSockets = {} // userID: webSocket
 
 // Creating a new websocket server
