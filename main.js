@@ -1,13 +1,16 @@
 // Set Group ID
 var groupId = ''
 
+// Websocket Reconnect
+var reconnectInterval = 1000 * 5;
+
 // Setup Logging
 const winston = require('winston');
 winston.level = 'debug';
 const logConfiguration = {
     'transports': [
         new winston.transports.Console({
-            level: 'info'
+            level: 'debug'
         })
     ]
 };
@@ -24,15 +27,52 @@ const server = new https.createServer({
     key: fs.readFileSync('server.key')
 });
 
+// Server API URLS
+lw_app_api_url = "wss://v1-linkplus-app.lightwaverf.com"
+lw_hub_api_url = "wss://linkplus-pub-api.lightwaverf.com:443/sockets"
+
 // Create Hub Client
-const ws_lw = new WebSocket("wss://linkplus-pub-api.lightwaverf.com:443/sockets");
-ws_lw.addEventListener("open", () =>{
-    logger.info("We are connected to Hub API");
-});
+var connect_ws_lw = function(){
+    ws_lw = new WebSocket(lw_hub_api_url, {
+        // rejectUnauthorized: false
+    });
+    ws_lw.on('open', function() {
+        logger.info("Hub API: Connected");
+        lw_is_auth = false
+    });
+    ws_lw.on('error', function(event) {
+        logger.info("Hub API: Socket Error");
+        logger.debug("Hub API:",event)
+    });
+    ws_lw.on('close', function() {
+        logger.info("Hub API: Socket Closed");
+        setTimeout(connect_ws_lw, reconnectInterval);
+    });
+};
+connect_ws_lw();
 
 // Create App Client
-const ws_lw_app = new WebSocket("wss://v1-linkplus-app.lightwaverf.com");
 var lw_is_auth = false
+
+var connect_lw_api = function(){
+    ws_lw_app = new WebSocket(lw_app_api_url, {
+        rejectUnauthorized: false
+    });
+    ws_lw_app.on('open', function() {
+        logger.info("App API: Connected");
+        lw_is_auth = false
+    });
+    ws_lw_app.on('error', function(event) {
+        logger.info("App API: Socket Error");
+        logger.debug("App API:",event)
+    });
+    ws_lw_app.on('close', function() {
+        logger.info("App API: Socket Closed");
+        setTimeout(connect_lw_api, reconnectInterval);
+    });
+};
+connect_lw_api();
+
 ws_lw_app.addEventListener("open", () =>{
     logger.info("We are connected to App API");
 });
@@ -151,7 +191,7 @@ wss.on("connection", (ws, req) => {
                     logger.debug(`App Client Message: ${data}`)
                     if (lw_is_auth == false) {
                         ws_lw_app.send(data)
-                    } else {
+                    } else { // tell the client it's authorised
                         auth_json = '{"version":1,"senderId":"1.ip=10=192=22=140*eu=west=1*compute*internal=82149","direction":"response","source":"_channel","items":[{"itemId":0,"success":true,"payload":{"workerUniqueId":"ip=10=192=22=140*eu=west=1*compute*internal=82149","serverName":"i-0b3c24bf89033f71e","handlerId":"user.7aa9ada8-9914-4f8f-9bd4-80f85593a54b.eb0d95dc-83f5-4b3c-9691-dcdbe9315987"}}],"class":"user","operation":"authenticate","transactionId":1}';
                         auth_json_parsed = JSON.parse(auth_json);
                         auth_json_parsed.transactionId = messageBody.transactionId
@@ -171,7 +211,7 @@ wss.on("connection", (ws, req) => {
                         // fwdMessage = JSON.stringify(messageBody)
                         // // Forward Message to Hub
                         // webSockets[hub].send(fwdMessage)
-                        ws_lw_app.send(data)
+                        ws_lw_app.send(data) // Currently proxying as the transaction id doesnt relate
                     } else if (messageBody.class == 'group') {
                         ws_lw_app.send(data)
                     }
