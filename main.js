@@ -94,27 +94,34 @@ wss.on("connection", (ws, req) => {
             const messageBody = JSON.parse(event.data);
             switch(messageBody.operation) {
                 case 'authenticate':
-                    logger.debug(`LW App has sent us: ${event.data}`)
+                    logger.debug(`App Api: LW App has sent us: ${event.data}`)
                     if (messageBody.items[0].success == true) { // Successfully authed with LW API
                         lw_is_auth = true
-                        logger.info("Successfully Authenticated with LW")
+                        logger.info("App Api: Successfully Authenticated with LW")
                         // Lets request groups from LW rather than waiting for them
                         var group_json='{"class":"user","operation":"rootGroups","version":1,"senderId":"29db9beb-fb3f-475c-929c-68eaa21ea80e","transactionId":1,"direction":"request","items":[{"itemId":1,"payload":{}}]}'
                         ws_lw_app.send(group_json)
+                    } else {
+                        logger.info("App Api: Authentication Failed")
                     }
                     break;
                 case 'rootGroups':
-                    logger.debug(`LW App has sent us: ${event.data}`)
+                    logger.debug(`App Api: LW App has sent us: ${event.data}`)
                     groupIds=messageBody.items[0].payload.groupIds[0]
                     groupId=groupIds.split('-')[0]
-                    logger.info(`Group ID ${groupId} received`)
+                    logger.info(`App Api: Group ID ${groupId} received`)
                     break;
+                case 'write':
+                    logger.debug(`App Api: LW App has sent us: ${event.data}`)
+                    featureId=messageBody.items[0].payload.featureId
+                    value=messageBody.items[0].payload.value
+                    logger.info(`App API: LW has requested ${featureId} to be set to ${value}`)
                 default:
                     if ((messageBody.items[0].success == false) && (messageBody.items[0].error.code == "200")) {
                         lw_is_auth = false
-                        logger.info("Error, not authenticated with LW")
+                        logger.info("App Api: Error, not authenticated with LW")
                     }
-                    logger.debug(`LW App has sent us: ${event.data}`);
+                    logger.debug(`App Api: LW has sent us: ${event.data}`);
                     break;
             }
             if (webSockets['haclient']) {
