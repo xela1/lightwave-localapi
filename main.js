@@ -235,7 +235,6 @@ wss.on("connection", (ws, req) => {
                         if (webSockets[hub]) {
                             webSockets[hub].send(JSON.stringify(messageBody))
                         }                        
-                        webSockets[hub].send(fwdMessage)
                         logger.info(`App: App has requested read on function ${featureId} Transaction ${messageBody.transactionId}`)
                         // ws_lw_app.send(data) // Currently proxying as the transaction id doesnt relate
                     } else if (messageBody.class == 'group') {
