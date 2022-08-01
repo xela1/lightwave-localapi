@@ -86,14 +86,23 @@ const wss = new WebSocket.Server({
 // Creating connection using websocket
 wss.on("connection", (ws, req) => {
     if (req.url == '/sockets') { // if hub connects, open new connection to LW
-        ws_lw.addEventListener('message', function (event) {
+        ws_lw.addEventListener('message', function (event) { // Messages from Hub ABI
             const messageBody = JSON.parse(event.data);
             switch(messageBody.operation) {
                 case 'write':
                     logger.debug(`Hub Api: LW has sent us: ${event.data}`)
                     featureId=messageBody.items[0].payload.featureId
                     value=messageBody.items[0].payload.value
-                    logger.info(`Hub API: LW has requested ${featureId} to be set to ${value}`)
+                    logger.info(`Hub API: LW has requested Feature ${featureId} to be set to ${value}`)
+                    break;
+                case 'authenticate':
+                    logger.debug(`Hub API: LW has sent us: ${event.data}`);
+                    if (messageBody.items[0].success == true) {
+                        logger.info("Hub API: Hub Successfully Authenticated")
+                    }
+                    else {
+                        logger.info("Hub API: Hub Authentication Failed")
+                    }
                     break;
                 default:
                     logger.info(`Hub API: LW has sent us: ${event.data}`);
@@ -145,9 +154,11 @@ wss.on("connection", (ws, req) => {
         const messageBody = JSON.parse(data);
         const operation = messageBody.operation
         if (req.url == '/sockets') { // Message from Hub
+            logger.debug(`Hub: Hub has sent us: ${data}`)
             switch(operation) {
                 case 'authenticate':
                     webSockets[messageBody.senderId] = ws
+                    logger.info("Hub: Authenticating with Lightwave")
                     ws_lw.send(data)
                     break;
                 case 'event':
@@ -176,8 +187,11 @@ wss.on("connection", (ws, req) => {
                         }
                     });
                     break;
-                case 'write':
-                    // webSockets['haclient'].send(data)
+                case 'write': // response from hub for feature write
+                    response = messageBody
+                    response.transactionId=response.items[0].itemId // Change transaction id back to the requested one (comes back in itemId)
+                    logger.info(`Hub: Recevied response from hub for transaction ${response.transactionId} sending to client`)
+                    webSockets['haclient'].send(JSON.stringify(response)) // respond to client
                     ws_lw.send(data)
                     break;
                 case 'read':
@@ -188,7 +202,7 @@ wss.on("connection", (ws, req) => {
                     ws_lw.send(data)
                     break;
             }
-            logger.debug(`Hub: Hub has sent us: ${data}`)
+            
         }
         if (req.url == '/') { // Message from HA
             switch(operation) {
@@ -226,8 +240,18 @@ wss.on("connection", (ws, req) => {
                 case 'rootGroups': // proxy this
                     ws_lw_app.send(data)
                     break;
-                case 'write': // proxy this for now
-                    ws_lw_app.send(data)
+                case 'write': // send direct to hub, bypassing Lightwave
+                    // get Hub ID from feature
+                    hub = messageBody.items[0].payload.featureId.split('-')[2].substring(0,messageBody.items[0].payload.featureId.split('-')[2].length-2)
+                    message=messageBody
+                    // Only send the feature ID, not the groups or hub ID
+                    message.items[0].payload.featureId=parseInt(message.items[0].payload.featureId.split("-")[1])
+                    // We don't want to send the request if the hub isnt connected
+                    if (webSockets[hub]) {
+                        webSockets[hub].send(JSON.stringify(message))
+                    }
+                    logger.debug(`App: App has sent us: ${data}`)
+                    // ws_lw_app.send(data)
                     break;                    
                 default:
                     logger.info(`App: App has sent us: ${data}`)
