@@ -14,7 +14,7 @@ const logger = createLogger({
     ),    
     'transports': [
         new transports.Console({
-            level: 'debug'
+            level: 'info'
         })
     ]
 });
@@ -224,6 +224,8 @@ wss.on("connection", (ws, req) => {
                     }               
                     break;
                 case 'read': // HA requesting state
+                // To do - keep track of whether the request was from LW or App and send back to 
+                // relevant sender, not both
                     if (messageBody.class == 'feature') { // Send feature request direct to hub
                         // extract featureId from JSON
                         featureId=messageBody.items[0].payload.featureId.split('-')[1]
@@ -236,7 +238,8 @@ wss.on("connection", (ws, req) => {
                             webSockets[hub].send(JSON.stringify(messageBody))
                         }                        
                         logger.info(`App: App has requested read on function ${featureId} Transaction ${messageBody.transactionId}`)
-                        // ws_lw_app.send(data) // Currently proxying as the transaction id doesnt relate
+                        logger.debug(`App: App has sent us: ${data}`)
+                        ws_lw_app.send(data) // Currently proxying as the transaction id doesnt relate
                     } else if (messageBody.class == 'group') {
                         ws_lw_app.send(data)
                     }
@@ -254,7 +257,7 @@ wss.on("connection", (ws, req) => {
                     if (webSockets[hub]) {
                         webSockets[hub].send(JSON.stringify(message))
                     }
-                    logger.info(`App: App has requested write on function ${message.items[0].payload.featureId}`)
+                    logger.info(`App: App has requested write on feature ${message.items[0].payload.featureId} Transaction ${messageBody.transactionId}`)
                     logger.debug(`App: App has sent us: ${data}`)
                     // ws_lw_app.send(data)
                     break;                    
