@@ -5,16 +5,19 @@ var groupId = ''
 var reconnectInterval = 1000 * 5;
 
 // Setup Logging
-const winston = require('winston');
-winston.level = 'debug';
-const logConfiguration = {
+const {transports, createLogger, format} = require('winston');
+
+const logger = createLogger({
+    format: format.combine(
+        format.timestamp(),
+        format.json()
+    ),    
     'transports': [
-        new winston.transports.Console({
+        new transports.Console({
             level: 'debug'
         })
     ]
-};
-const logger = winston.createLogger(logConfiguration);
+});
 
 // Importing the required modules
 const WebSocket = require('ws');
@@ -84,10 +87,10 @@ const wss = new WebSocket.Server({
 wss.on("connection", (ws, req) => {
     if (req.url == '/sockets') { // if hub connects, open new connection to LW
         ws_lw.addEventListener('message', function (event) {
-            console.log(`LW has sent us: ${event.data}`);
+            logger.info(`Hub API: LW has sent us: ${event.data}`);
             ws.send(event.data)
         });
-        console.log(`New Hub Connection from ${ws._socket.remoteAddress}`);
+        logger.info(`Hub: New Hub Connection from ${ws._socket.remoteAddress}`);
     }
     if (req.url == '/') {
         ws_lw_app.addEventListener('message', function (event) {
@@ -226,7 +229,7 @@ wss.on("connection", (ws, req) => {
                     ws_lw_app.send(data)
                     break;                    
                 default:
-                    console.log(`App has sent us: ${data}`)
+                    logger.info(`App: App has sent us: ${data}`)
                     break;
             }
         }
@@ -234,11 +237,11 @@ wss.on("connection", (ws, req) => {
     });
     // handling what to do when clients disconnects from server
     ws.on("close", () => {
-        console.log("the client has disconnected");
+        logger.info("Client has disconnected");
     });
     // handling client connection error
     ws.onerror = function () {
-        console.log("Some Error occurred")
+        logger.info("Some Error occurred")
     }
 });
 server.listen(443);
