@@ -87,7 +87,18 @@ const wss = new WebSocket.Server({
 wss.on("connection", (ws, req) => {
     if (req.url == '/sockets') { // if hub connects, open new connection to LW
         ws_lw.addEventListener('message', function (event) {
-            logger.info(`Hub API: LW has sent us: ${event.data}`);
+            const messageBody = JSON.parse(event.data);
+            switch(messageBody.operation) {
+                case 'write':
+                    logger.debug(`Hub Api: LW has sent us: ${event.data}`)
+                    featureId=messageBody.items[0].payload.featureId
+                    value=messageBody.items[0].payload.value
+                    logger.info(`Hub API: LW has requested ${featureId} to be set to ${value}`)
+                    break;
+                default:
+                    logger.info(`Hub API: LW has sent us: ${event.data}`);
+                    break;
+            }
             ws.send(event.data)
         });
         logger.info(`Hub: New Hub Connection from ${ws._socket.remoteAddress}`);
@@ -114,11 +125,7 @@ wss.on("connection", (ws, req) => {
                     groupId=groupIds.split('-')[0]
                     logger.info(`App Api: Group ID ${groupId} received`)
                     break;
-                case 'write':
-                    logger.debug(`App Api: LW App has sent us: ${event.data}`)
-                    featureId=messageBody.items[0].payload.featureId
-                    value=messageBody.items[0].payload.value
-                    logger.info(`App API: LW has requested ${featureId} to be set to ${value}`)
+
                 default:
                     if ((messageBody.items[0].success == false) && (messageBody.items[0].error.code == "200")) {
                         lw_is_auth = false
@@ -133,19 +140,15 @@ wss.on("connection", (ws, req) => {
         });
         logger.info(`New Application Client Connected ${ws._socket.remoteAddress}`);
     }
-    // sending message
+    // Client sending message
     ws.on("message", data => {
         const messageBody = JSON.parse(data);
         const operation = messageBody.operation
-        if (req.url == '/sockets') {
+        if (req.url == '/sockets') { // Message from Hub
             switch(operation) {
                 case 'authenticate':
                     webSockets[messageBody.senderId] = ws
                     ws_lw.send(data)
-                    // // Replace featureId
-                    // messageBody.items[0].payload.configNumber=1836
-                    // fwdMessage = JSON.stringify(messageBody)
-                    // ws_lw.send(fwdMessage)
                     break;
                 case 'event':
                     messageBody.items.forEach(element => {
@@ -182,14 +185,12 @@ wss.on("connection", (ws, req) => {
                     ws_lw.send(data)
                     break;
                 default:
-                    
                     ws_lw.send(data)
                     break;
             }
-            logger.debug(`Hub has sent us: ${data}`)
-            
+            logger.debug(`Hub: Hub has sent us: ${data}`)
         }
-        if (req.url == '/') {
+        if (req.url == '/') { // Message from HA
             switch(operation) {
                 case 'authenticate': // proxy this
                     webSockets['haclient'] = ws
