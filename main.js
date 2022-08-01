@@ -255,7 +255,7 @@ wss.on("connection", (ws, req) => {
                     if (webSockets[hub]) {
                         webSockets[hub].send(JSON.stringify(message))
                     }
-                    logger.info(`App: App has requested write on function ${message.items[0].payload.featureId.split("-")[1]} Transaction ${messageBody.transactionId}`)
+                    logger.info(`App: App has requested write on function ${message.items[0].payload.featureId}`)
                     logger.debug(`App: App has sent us: ${data}`)
                     // ws_lw_app.send(data)
                     break;                    
