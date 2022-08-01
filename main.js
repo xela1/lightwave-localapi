@@ -195,7 +195,10 @@ wss.on("connection", (ws, req) => {
                     ws_lw.send(data)
                     break;
                 case 'read':
-                    // webSockets['haclient'].send(data)
+                    response = messageBody
+                    response.transactionId=response.items[0].itemId // Change transaction id back to the requested one (comes back in itemId)
+                    logger.info(`Hub: Recevied response from hub for transaction ${response.transactionId} sending to client`)
+                    webSockets['haclient'].send(JSON.stringify(response)) // respond to client
                     ws_lw.send(data)
                     break;
                 default:
@@ -222,17 +225,17 @@ wss.on("connection", (ws, req) => {
                     break;
                 case 'read': // HA requesting state
                     if (messageBody.class == 'feature') { // Send feature request direct to hub
-                        // // extract featureId from JSON
-                        // featureId=messageBody.items[0].payload.featureId.split('-')[1]
-                        // // Get the HUB Id from JSON
-                        // hub = messageBody.items[0].payload.featureId.split('-')[2].substring(0,messageBody.items[0].payload.featureId.split('-')[2].length-2)
-                        // // Replace featureId
-                        // messageBody.items[0].payload.featureId=parseInt(featureId)
-                        // // Convert back to JSON string
-                        // fwdMessage = JSON.stringify(messageBody)
-                        // // Forward Message to Hub
-                        // webSockets[hub].send(fwdMessage)
-                        ws_lw_app.send(data) // Currently proxying as the transaction id doesnt relate
+                        // extract featureId from JSON
+                        featureId=messageBody.items[0].payload.featureId.split('-')[1]
+                        // Get the HUB Id from JSON
+                        hub = messageBody.items[0].payload.featureId.split('-')[2].substring(0,messageBody.items[0].payload.featureId.split('-')[2].length-2)
+                        // Replace featureId
+                        messageBody.items[0].payload.featureId=parseInt(featureId)
+                        // Convert back to JSON string
+                        fwdMessage = JSON.stringify(messageBody)
+                        // Forward Message to Hub
+                        webSockets[hub].send(fwdMessage)
+                        // ws_lw_app.send(data) // Currently proxying as the transaction id doesnt relate
                     } else if (messageBody.class == 'group') {
                         ws_lw_app.send(data)
                     }
