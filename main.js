@@ -231,10 +231,12 @@ wss.on("connection", (ws, req) => {
                         hub = messageBody.items[0].payload.featureId.split('-')[2].substring(0,messageBody.items[0].payload.featureId.split('-')[2].length-2)
                         // Replace featureId
                         messageBody.items[0].payload.featureId=parseInt(featureId)
-                        // Convert back to JSON string
-                        fwdMessage = JSON.stringify(messageBody)
                         // Forward Message to Hub
+                        if (webSockets[hub]) {
+                            webSockets[hub].send(JSON.stringify(messageBody))
+                        }                        
                         webSockets[hub].send(fwdMessage)
+                        logger.info(`App: App has requested read on function ${featureId} Transaction ${messageBody.transactionId}`)
                         // ws_lw_app.send(data) // Currently proxying as the transaction id doesnt relate
                     } else if (messageBody.class == 'group') {
                         ws_lw_app.send(data)
@@ -253,6 +255,7 @@ wss.on("connection", (ws, req) => {
                     if (webSockets[hub]) {
                         webSockets[hub].send(JSON.stringify(message))
                     }
+                    logger.info(`App: App has requested read on function ${featureId} Transaction ${messageBody.transactionId}`)
                     logger.debug(`App: App has sent us: ${data}`)
                     // ws_lw_app.send(data)
                     break;                    
