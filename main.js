@@ -41,7 +41,9 @@ var connect_ws_lw = function(){
     });
     ws_lw.on('open', function() {
         logger.info("Hub API: Connected");
-        lw_is_auth = false
+        if (hub_auth) { // If connection is re-established re-send initial hub auth
+            ws_lw.send(hub_auth)
+        }
     });
     ws_lw.on('error', function(event) {
         logger.error("Hub API: Socket Error");
@@ -54,8 +56,10 @@ var connect_ws_lw = function(){
 };
 connect_ws_lw();
 
-// Create App Client
+// Auth Variables
 var lw_is_auth = false
+var hub_auth = ""
+var app_auth = ""
 
 var connect_lw_api = function(){
     ws_lw_app = new WebSocket(lw_app_api_url, {
@@ -64,6 +68,9 @@ var connect_lw_api = function(){
     ws_lw_app.on('open', function() {
         logger.info("App API: Connected");
         lw_is_auth = false
+        if (app_auth) { // If socket is reconnected, attempt to re-auth with saved json
+            ws_lw_app.send(app_auth)
+        }
     });
     ws_lw_app.on('error', function(event) {
         logger.info("App API: Socket Error");
@@ -158,6 +165,7 @@ wss.on("connection", (ws, req) => {
             switch(operation) {
                 case 'authenticate':
                     webSockets[messageBody.senderId] = ws
+                    hub_auth = data
                     logger.info("Hub: Authenticating with Lightwave")
                     ws_lw.send(data)
                     break;
@@ -213,6 +221,7 @@ wss.on("connection", (ws, req) => {
                     webSockets['haclient'] = ws
                     logger.info('App Client: Requested Authenticate')
                     logger.debug(`App Client Message: ${data}`)
+                    app_auth = data
                     if (lw_is_auth == false) {
                         ws_lw_app.send(data)
                     } else { // tell the client it's authorised
