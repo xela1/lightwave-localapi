@@ -44,11 +44,11 @@ var connect_ws_lw = function(){
         lw_is_auth = false
     });
     ws_lw.on('error', function(event) {
-        logger.info("Hub API: Socket Error");
+        logger.error("Hub API: Socket Error");
         logger.debug("Hub API:",event)
     });
     ws_lw.on('close', function() {
-        logger.info("Hub API: Socket Closed");
+        logger.error("Hub API: Socket Closed");
         setTimeout(connect_ws_lw, reconnectInterval);
     });
 };
@@ -220,6 +220,8 @@ wss.on("connection", (ws, req) => {
                         auth_json_parsed = JSON.parse(auth_json);
                         auth_json_parsed.transactionId = messageBody.transactionId
                         response_json = JSON.stringify(auth_json_parsed);
+                        logger.info('App: Sending Auth Response to App')
+                        logger.debug(`App: Auth Response ${response_json}`)
                         webSockets['haclient'].send(response_json)
                     }               
                     break;
@@ -239,7 +241,7 @@ wss.on("connection", (ws, req) => {
                         }                        
                         logger.info(`App: App has requested read on function ${featureId} Transaction ${messageBody.transactionId}`)
                         logger.debug(`App: App has sent us: ${data}`)
-                        ws_lw_app.send(data) // Currently proxying as the transaction id doesnt relate
+                        // ws_lw_app.send(data) // Currently proxying as the transaction id doesnt relate
                     } else if (messageBody.class == 'group') {
                         ws_lw_app.send(data)
                     }
