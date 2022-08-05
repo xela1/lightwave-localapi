@@ -42,6 +42,7 @@ var connect_ws_lw = function(){
     ws_lw.on('open', function() {
         logger.info("Hub API: Connected");
         if (hub_auth) { // If connection is re-established re-send initial hub auth
+            logger.info("Hub Api: Re-authenticating with Hub API")
             ws_lw.send(hub_auth)
         }
     });
@@ -69,6 +70,7 @@ var connect_lw_api = function(){
         logger.info("App API: Connected");
         lw_is_auth = false
         if (app_auth) { // If socket is reconnected, attempt to re-auth with saved json
+            logger.info("App Api: Re-authenticating with App API")
             ws_lw_app.send(app_auth)
         }
     });
@@ -108,7 +110,7 @@ wss.on("connection", (ws, req) => {
                         logger.info("Hub API: Hub Successfully Authenticated")
                     }
                     else {
-                        logger.info("Hub API: Hub Authentication Failed")
+                        logger.error("Hub API: Hub Authentication Failed")
                     }
                     break;
                 default:
@@ -145,7 +147,7 @@ wss.on("connection", (ws, req) => {
                 default:
                     if ((messageBody.items[0].success == false) && (messageBody.items[0].error.code == "200")) {
                         lw_is_auth = false
-                        logger.info("App Api: Error, not authenticated with LW")
+                        logger.error("App Api: Error, not authenticated with LW")
                     }
                     logger.debug(`App Api: LW has sent us: ${event.data}`);
                     break;
