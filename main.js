@@ -214,7 +214,7 @@ wss.on("connection", (ws, req) => {
                     ws_lw.send(data)
                     break;
                 default:
-                    logger.debug(`Hub: Unhandled operation: ${response}`)
+                    logger.debug(`Hub: Unhandled operation: ${data}`)
                     ws_lw.send(data)
                     break;
             }
