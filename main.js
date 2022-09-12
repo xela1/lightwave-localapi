@@ -203,14 +203,22 @@ wss.on("connection", (ws, req) => {
                     response = messageBody
                     response.transactionId=response.items[0].itemId // Change transaction id back to the requested one (comes back in itemId)
                     logger.info(`Hub: Recevied response from hub for transaction ${response.transactionId} sending to client`)
-                    webSockets['haclient'].send(JSON.stringify(response)) // respond to client
+                    if (webSockets['haclient']) {
+                        webSockets['haclient'].send(JSON.stringify(response)) // respond to client
+                    } else {
+                        logger.info("No clients connected, not sending events")
+                    }
                     ws_lw.send(data)
                     break;
                 case 'read':
                     response = messageBody
                     response.transactionId=response.items[0].itemId // Change transaction id back to the requested one (comes back in itemId)
                     logger.info(`Hub: Recevied response from hub for transaction ${response.transactionId} sending to client`)
-                    webSockets['haclient'].send(JSON.stringify(response)) // respond to client
+                    if (webSockets['haclient']) {
+                        webSockets['haclient'].send(JSON.stringify(response)) // respond to client
+                    } else {
+                        logger.info("No clients connected, not sending events")
+                    }
                     ws_lw.send(data)
                     break;
                 default:
