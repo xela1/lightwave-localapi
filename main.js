@@ -202,7 +202,7 @@ wss.on("connection", (ws, req) => {
                 case 'write': // response from hub for feature write
                     response = messageBody
                     response.transactionId=response.items[0].itemId // Change transaction id back to the requested one (comes back in itemId)
-                    logger.info(`Hub: Recevied response from hub for transaction ${response.transactionId} sending to client`)
+                    logger.info(`Hub: Received response from hub for transaction ${response.transactionId} sending to client`)
                     if (webSockets['haclient']) {
                         webSockets['haclient'].send(JSON.stringify(response)) // respond to client
                     } else {
@@ -241,6 +241,7 @@ wss.on("connection", (ws, req) => {
                         auth_json = '{"version":1,"senderId":"1.ip=10=192=22=140*eu=west=1*compute*internal=82149","direction":"response","source":"_channel","items":[{"itemId":0,"success":true,"payload":{"workerUniqueId":"ip=10=192=22=140*eu=west=1*compute*internal=82149","serverName":"i-0b3c24bf89033f71e","handlerId":"user.7aa9ada8-9914-4f8f-9bd4-80f85593a54b.eb0d95dc-83f5-4b3c-9691-dcdbe9315987"}}],"class":"user","operation":"authenticate","transactionId":1}';
                         auth_json_parsed = JSON.parse(auth_json);
                         auth_json_parsed.transactionId = messageBody.transactionId
+                        auth_json_parsed.items[0].itemId = messageBody.transactionId
                         response_json = JSON.stringify(auth_json_parsed);
                         logger.info('App: Sending Auth Response to App')
                         logger.debug(`App: Auth Response ${response_json}`)
