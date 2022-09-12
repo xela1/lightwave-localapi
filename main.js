@@ -43,6 +43,7 @@ var connect_ws_lw = function(){
         logger.info("Hub API: Connected");
         if (hub_auth) { // If connection is re-established re-send initial hub auth
             logger.info("Hub Api: Re-authenticating with Hub API")
+            logger.debug(`Hub API: sending ${hub_auth} to LW`)
             ws_lw.send(hub_auth)
         }
     });
@@ -169,6 +170,7 @@ wss.on("connection", (ws, req) => {
                     webSockets[messageBody.senderId] = ws
                     hub_auth = data
                     logger.info("Hub: Authenticating with Lightwave")
+                    logger.debug(`Hub: Sending ${data} to LW`)
                     ws_lw.send(data)
                     break;
                 case 'event':
@@ -212,6 +214,7 @@ wss.on("connection", (ws, req) => {
                     ws_lw.send(data)
                     break;
                 default:
+                    logger.debug(`Hub: Unhandled operation: ${response}`)
                     ws_lw.send(data)
                     break;
             }
