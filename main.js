@@ -41,11 +41,15 @@ var connect_ws_lw = function(){
     });
     ws_lw.on('open', function() {
         logger.info("Hub API: Connected");
-        if (hub_auth) { // If connection is re-established re-send initial hub auth
-            logger.info("Hub Api: Re-authenticating with Hub API")
-            logger.debug(`Hub API: sending ${hub_auth} to LW`)
-            ws_lw.send(hub_auth)
+        if (typeof webSockets['hub'] !== 'undefined' && webSockets['hub'] ) {
+            webSockets['hub'].close();
+            logger.info("Hub API: Forcing Hub to reconnect")
         }
+        // if (hub_auth) { // If connection is re-established re-send initial hub auth
+        //     logger.info("Hub Api: Re-authenticating with Hub API")
+        //     logger.debug(`Hub API: sending ${hub_auth} to LW`)
+        //     ws_lw.send(hub_auth)
+        // }
     });
     ws_lw.on('error', function(event) {
         logger.error("Hub API: Socket Error");
@@ -164,6 +168,7 @@ wss.on("connection", (ws, req) => {
         const messageBody = JSON.parse(data);
         const operation = messageBody.operation
         if (req.url == '/sockets') { // Message from Hub
+            webSockets['hub'] = ws
             logger.debug(`Hub: Hub has sent us: ${data}`)
             switch(operation) {
                 case 'authenticate':
