@@ -136,8 +136,10 @@ wss.on("connection", (ws, req) => {
                         lw_is_auth = true
                         logger.info("App Api: Successfully Authenticated with LW")
                         // Lets request groups from LW rather than waiting for them
-                        var group_json='{"class":"user","operation":"rootGroups","version":1,"senderId":"29db9beb-fb3f-475c-929c-68eaa21ea80e","transactionId":1,"direction":"request","items":[{"itemId":1,"payload":{}}]}'
-                        ws_lw_app.send(group_json)
+                        if (groupId.length === 0) {
+                            var group_json='{"class":"user","operation":"rootGroups","version":1,"senderId":"29db9beb-fb3f-475c-929c-68eaa21ea80e","transactionId":1,"direction":"request","items":[{"itemId":1,"payload":{}}]}'
+                            ws_lw_app.send(group_json)
+                        }
                     } else {
                         logger.info("App Api: Authentication Failed")
                     }
