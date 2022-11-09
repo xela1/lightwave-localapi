@@ -34,6 +34,9 @@ const server = new https.createServer({
 lw_app_api_url = "wss://v1-linkplus-app.lightwaverf.com"
 lw_hub_api_url = "wss://linkplus-pub-api.lightwaverf.com:443/sockets"
 
+// Get Local IP
+var ip = require("ip");
+
 // Create Hub Client
 var connect_ws_lw = function(){
     ws_lw = new WebSocket(lw_hub_api_url, {
@@ -97,6 +100,8 @@ const wss = new WebSocket.Server({
     server: server
  })
  
+AppClients = [];
+
 // Creating connection using websocket
 wss.on("connection", (ws, req) => {
     if (req.url == '/sockets') { // if hub connects, open new connection to LW
@@ -108,6 +113,7 @@ wss.on("connection", (ws, req) => {
                     featureId=messageBody.items[0].payload.featureId
                     value=messageBody.items[0].payload.value
                     logger.info(`Hub API: LW has requested Feature ${featureId} to be set to ${value}`)
+                    ws.send(event.data)
                     break;
                 case 'authenticate':
                     logger.debug(`Hub API: LW has sent us: ${event.data}`);
@@ -117,12 +123,14 @@ wss.on("connection", (ws, req) => {
                     else {
                         logger.error("Hub API: Hub Authentication Failed")
                     }
+                    ws.send(event.data)
                     break;
                 default:
                     logger.info(`Hub API: LW has sent us: ${event.data}`);
+                    ws.send(event.data)
                     break;
             }
-            ws.send(event.data)
+            
         });
         logger.info(`Hub: New Hub Connection from ${ws._socket.remoteAddress}`);
     }
@@ -133,10 +141,9 @@ wss.on("connection", (ws, req) => {
                 case 'authenticate':
                     logger.debug(`App Api: LW App has sent us: ${event.data}`)
                     if (messageBody.items[0].success == true) { // Successfully authed with LW API
-                        // not going to store successful state for now, lets let the app handle already authed
-                        //lw_is_auth = true 
+                        lw_is_auth = true 
                         logger.info("App Api: Successfully Authenticated with LW")
-                        // Lets request groups from LW rather than waiting for them
+                        // Lets request groups from LW rather than waiting for them (if we restart the local API, the client doesnt request them)
                         if (groupId.length === 0) {
                             var group_json='{"class":"user","operation":"rootGroups","version":1,"senderId":"29db9beb-fb3f-475c-929c-68eaa21ea80e","transactionId":1,"direction":"request","items":[{"itemId":1,"payload":{}}]}'
                             ws_lw_app.send(group_json)
@@ -146,26 +153,38 @@ wss.on("connection", (ws, req) => {
                     } else {
                         logger.info("App Api: Authentication Failed")
                     }
+                    if (webSockets['haclient']) {
+                        webSockets['haclient'].send(event.data)
+                    }
                     break;
                 case 'rootGroups':
                     logger.debug(`App Api: LW App has sent us: ${event.data}`)
                     groupIds=messageBody.items[0].payload.groupIds[0]
                     groupId=groupIds.split('-')[0]
                     logger.info(`App Api: Group ID ${groupId} received`)
+                    if (webSockets['haclient']) {
+                        webSockets['haclient'].send(event.data)
+                    }
                     break;
-
+                case 'event': // ignore event from lightwave if group has been sent (we've already sent to client)
+                    if (groupId.length === 0) {
+                        logger.debug(`Hub API: LW has sent us: ${event.data}`);
+                        ws.send(event.data)
+                    }
+                    break;
                 default:
                     if ((messageBody.items[0].success == false) && (messageBody.items[0].error.code == "200")) {
                         lw_is_auth = false
                         logger.error("App Api: Error, not authenticated with LW")
                     }
                     logger.debug(`App Api: LW has sent us: ${event.data}`);
+                    if (webSockets['haclient']) {
+                        webSockets['haclient'].send(event.data)
+                    }
                     break;
             }
-            if (webSockets['haclient']) {
-                webSockets['haclient'].send(event.data)
-            }
         });
+        AppClients.push(ws);
         logger.info(`New Application Client Connected ${ws._socket.remoteAddress}`);
     }
     // Client sending message
@@ -199,14 +218,16 @@ wss.on("connection", (ws, req) => {
                         response['items'].push(element)
                         responsejson = JSON.stringify(response);
                         if (groupId) { // can't send event without the GroupID so we'll need to get LW to do it
-                            if (webSockets['haclient']) {
-                                webSockets['haclient'].send(responsejson)
-                            } else {
-                                logger.info("No clients connected, not sending events")
-                            }
+                            // if (webSockets['haclient']) {
+                            //     webSockets['haclient'].send(responsejson)
+                            // } else {
+                            //     logger.info("No clients connected, not sending events")
+                            // }
+                            sendAll(responsejson)
                         } else { // not received groupId yet, send to LW API to deal with
-                            ws_lw.send(data)
+                            // ws_lw.send(data)
                         }
+			            ws_lw.send(data)
                     });
                     break;
                 case 'write': // response from hub for feature write
@@ -252,6 +273,8 @@ wss.on("connection", (ws, req) => {
                         auth_json_parsed = JSON.parse(auth_json);
                         auth_json_parsed.transactionId = messageBody.transactionId
                         auth_json_parsed.items[0].itemId = messageBody.transactionId
+                        auth_json_parsed.senderId = "1.ip=" + ip.address()
+                        auth_json_parsed.items[0].payload.workerUniqueId = ip.address()
                         response_json = JSON.stringify(auth_json_parsed);
                         logger.info('App: Sending Auth Response to App')
                         logger.debug(`App: Auth Response ${response_json}`)
@@ -314,6 +337,12 @@ wss.on("connection", (ws, req) => {
 });
 server.listen(443);
 logger.info(`The WebSocket server is running on port ${server.address().port}`)
+
+function sendAll (message) {
+    for (var i=0; i<AppClients.length; i++) {
+        AppClients[i].send(message);
+    }
+}
 
 process.on('SIGINT', function() {
     logger.info("Caught interrupt signal");
