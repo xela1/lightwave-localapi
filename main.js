@@ -364,7 +364,8 @@ wss.on("connection", (ws, req) => {
     });
     // handling what to do when clients disconnects from server
     ws.on("close", () => {
-        logger.info("Client has disconnected");
+        logger.info(`Client ${ws.id} has disconnected`);
+        RemoveClient(ws.id)
     });
     // handling client connection error
     ws.onerror = function () {
@@ -373,6 +374,14 @@ wss.on("connection", (ws, req) => {
 });
 server.listen(443);
 logger.info(`The WebSocket server is running on port ${server.address().port}`)
+
+function RemoveClient (clientId) {
+    for (var i=0; i<AppClients.length; i++) {
+        if (AppClients[i].id == clientId) {
+            AppClients.splice(i,1)
+        }
+    }
+}
 
 function sendAll (message) {
     for (var i=0; i<AppClients.length; i++) {
