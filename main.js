@@ -298,7 +298,6 @@ wss.on("connection", (ws, req) => {
             
         }
         if (req.url == '/') { // Message from HA
-            console.info(ws.id);
             switch(operation) {
                 case 'authenticate': // proxy this
                     logger.info('App Client: Requested Authenticate')
