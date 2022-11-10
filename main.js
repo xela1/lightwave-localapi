@@ -37,6 +37,12 @@ lw_hub_api_url = "wss://linkplus-pub-api.lightwaverf.com:443/sockets"
 // Get Local IP
 var ip = require("ip");
 
+// Set up Wait
+waitingResponse = [];
+
+// Set up Websockets
+webSockets = [];
+
 // Create Hub Client
 var connect_ws_lw = function(){
     ws_lw = new WebSocket(lw_hub_api_url, {
@@ -75,6 +81,8 @@ var connect_lw_api = function(){
         rejectUnauthorized: false
     });
     ws_lw_app.on('open', function() {
+        ws_lw_app.id = "LWAPI"
+        AppClients.push(ws_lw_app)
         logger.info("App API: Connected");
         lw_is_auth = false
         if (app_auth) { // If socket is reconnected, attempt to re-auth with saved json
@@ -102,8 +110,16 @@ const wss = new WebSocket.Server({
  
 AppClients = [];
 
+wss.getUniqueID = function () {
+    function s4() {
+        return Math.floor((1 + Math.random()) * 0x10000).toString(16).substring(1);
+    }
+    return s4() + s4() + '-' + s4();
+};
+
 // Creating connection using websocket
 wss.on("connection", (ws, req) => {
+    ws.id = wss.getUniqueID();
     if (req.url == '/sockets') { // if hub connects, open new connection to LW
         ws_lw.addEventListener('message', function (event) { // Messages from Hub ABI
             const messageBody = JSON.parse(event.data);
@@ -132,6 +148,7 @@ wss.on("connection", (ws, req) => {
             }
             
         });
+        webSockets['hub'] = ws
         logger.info(`Hub: New Hub Connection from ${ws._socket.remoteAddress}`);
     }
     if (req.url == '/') {
@@ -185,14 +202,13 @@ wss.on("connection", (ws, req) => {
             }
         });
         AppClients.push(ws);
-        logger.info(`New Application Client Connected ${ws._socket.remoteAddress}`);
+        logger.info(`New Application Client Connected ${ws._socket.remoteAddress} ${ws.id}`);
     }
     // Client sending message
     ws.on("message", data => {
         const messageBody = JSON.parse(data);
         const operation = messageBody.operation
         if (req.url == '/sockets') { // Message from Hub
-            webSockets['hub'] = ws
             logger.debug(`Hub: Hub has sent us: ${data}`)
             switch(operation) {
                 case 'authenticate':
@@ -244,13 +260,18 @@ wss.on("connection", (ws, req) => {
                 case 'read':
                     response = messageBody
                     response.transactionId=response.items[0].itemId // Change transaction id back to the requested one (comes back in itemId)
-                    logger.info(`Hub: Recevied response from hub for transaction ${response.transactionId} sending to client`)
-                    if (webSockets['haclient']) {
-                        webSockets['haclient'].send(JSON.stringify(response)) // respond to client
+                    if (typeof waitingResponse[response.transactionId] !== 'undefined') {
+                        logger.info(`Hub: Received response from hub for transaction ${response.transactionId} sending to client ${waitingResponse[response.transactionId]}`)
+                        sendtoClient(waitingResponse[response.transactionId],response)
                     } else {
-                        logger.info("No clients connected, not sending events")
+                        logger.debug(`Hub: Received unexpected response ${data}`)
                     }
-                    ws_lw.send(data)
+                    // if (webSockets['haclient']) {
+                    //     webSockets['haclient'].send(JSON.stringify(response)) // respond to client
+                    // } else {
+                    //     logger.info("No clients connected, not sending events")
+                    // }
+                    // ws_lw.send(data)
                     break;
                 default:
                     logger.debug(`Hub: Unhandled operation: ${data}`)
@@ -260,6 +281,7 @@ wss.on("connection", (ws, req) => {
             
         }
         if (req.url == '/') { // Message from HA
+            console.info(ws.id);
             switch(operation) {
                 case 'authenticate': // proxy this
                     webSockets['haclient'] = ws
@@ -267,7 +289,7 @@ wss.on("connection", (ws, req) => {
                     logger.debug(`App Client Message: ${data}`)
                     app_auth = data
                     if (lw_is_auth == false) {
-                        ws_lw_app.send(data)
+                        sendtoClient("LWAPI",messageBody)
                     } else { // tell the client it's authorised
                         auth_json = '{"version":1,"senderId":"1.ip=10=192=22=140*eu=west=1*compute*internal=82149","direction":"response","source":"_channel","items":[{"itemId":0,"success":true,"payload":{"workerUniqueId":"ip=10=192=22=140*eu=west=1*compute*internal=82149","serverName":"i-0b3c24bf89033f71e","handlerId":"user.7aa9ada8-9914-4f8f-9bd4-80f85593a54b.eb0d95dc-83f5-4b3c-9691-dcdbe9315987"}}],"class":"user","operation":"authenticate","transactionId":1}';
                         auth_json_parsed = JSON.parse(auth_json);
@@ -278,7 +300,8 @@ wss.on("connection", (ws, req) => {
                         response_json = JSON.stringify(auth_json_parsed);
                         logger.info('App: Sending Auth Response to App')
                         logger.debug(`App: Auth Response ${response_json}`)
-                        webSockets['haclient'].send(response_json)
+                        sendtoClient(ws.id,auth_json_parsed)
+                        // webSockets['haclient'].send(response_json)
                     }               
                     break;
                 case 'read': // HA requesting state
@@ -291,13 +314,9 @@ wss.on("connection", (ws, req) => {
                         hub = messageBody.items[0].payload.featureId.split('-')[2].substring(0,messageBody.items[0].payload.featureId.split('-')[2].length-2)
                         // Replace featureId
                         messageBody.items[0].payload.featureId=parseInt(featureId)
-                        // Forward Message to Hub
-                        if (webSockets[hub]) {
-                            webSockets[hub].send(JSON.stringify(messageBody))
-                        }                        
+                        sendtoHub(ws.id,messageBody)
                         logger.info(`App: App has requested read on function ${featureId} Transaction ${messageBody.transactionId}`)
                         logger.debug(`App: App has sent us: ${data}`)
-                        // ws_lw_app.send(data) // Currently proxying as the transaction id doesnt relate
                     } else if (messageBody.class == 'group') {
                         ws_lw_app.send(data)
                     }
@@ -342,6 +361,26 @@ function sendAll (message) {
     for (var i=0; i<AppClients.length; i++) {
         AppClients[i].send(message);
     }
+}
+
+function sendtoClient (clientId,message) {
+    var success = false
+    for (var i=0; i<AppClients.length; i++) {
+        if (AppClients[i].id == clientId) {
+            AppClients[i].send(JSON.stringify(message));
+            success = true
+        }
+    }
+    if (success != true) {
+        logger.error(`App: Client with ID ${clientId} not found`)
+    }
+}
+
+function sendtoHub (clientId,message) {
+    waitingResponse[message.transactionId] = clientId
+    if (webSockets['hub']) {
+        webSockets['hub'].send(JSON.stringify(message))
+    }    
 }
 
 process.on('SIGINT', function() {
