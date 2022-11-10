@@ -15,7 +15,9 @@ const logger = createLogger({
     'transports': [
         new transports.Console({
             level: process.env.LOG_LEVEL || 'info'
-        })
+        }),
+        new transports.File({ filename: 'error.log', level: 'error' }),
+        new transports.File({ filename: 'debug.log', level: 'debug' })
     ]
 });
 
@@ -36,6 +38,7 @@ lw_hub_api_url = "wss://linkplus-pub-api.lightwaverf.com:443/sockets"
 
 // Get Local IP
 var ip = require("ip");
+const { cli } = require('winston/lib/winston/config');
 
 // Set up Wait
 waitingResponse = [];
@@ -225,9 +228,6 @@ wss.on("connection", (ws, req) => {
                         logger.error("App Api: Error, not authenticated with LW")
                     }
                     logger.error(`App Api: LW has sent us unhandled data: ${event.data}`);
-                    // if (webSockets['haclient']) {
-                    //     webSockets['haclient'].send(event.data)
-                    // }
                     break;
             }
         });
@@ -242,7 +242,6 @@ wss.on("connection", (ws, req) => {
             logger.debug(`Hub: Hub has sent us: ${data}`)
             switch(operation) {
                 case 'authenticate':
-                    webSockets[messageBody.senderId] = ws
                     hub_auth = data
                     logger.info("Hub: Authenticating with Lightwave")
                     logger.debug(`Hub: Sending ${data} to LW`)
@@ -302,7 +301,6 @@ wss.on("connection", (ws, req) => {
             console.info(ws.id);
             switch(operation) {
                 case 'authenticate': // proxy this
-                    webSockets['haclient'] = ws
                     logger.info('App Client: Requested Authenticate')
                     logger.debug(`App Client Message: ${data}`)
                     app_auth = data
@@ -328,15 +326,15 @@ wss.on("connection", (ws, req) => {
                 // To do - keep track of whether the request was from LW or App and send back to 
                 // relevant sender, not both
                     if (messageBody.class == 'feature') { // Send feature request direct to hub
+                        logger.debug(`App: App has sent us: ${data}`)                        
                         // extract featureId from JSON
                         featureId=messageBody.items[0].payload.featureId.split('-')[1]
                         // Get the HUB Id from JSON
                         hub = messageBody.items[0].payload.featureId.split('-')[2].substring(0,messageBody.items[0].payload.featureId.split('-')[2].length-2)
-                        // Replace featureId
+                        logger.info(`App: App has requested read on function ${featureId} Transaction ${messageBody.transactionId}`)
+                        // Replace featureId                        
                         messageBody.items[0].payload.featureId=parseInt(featureId)
                         sendtoHub(ws.id,messageBody)
-                        logger.info(`App: App has requested read on function ${featureId} Transaction ${messageBody.transactionId}`)
-                        logger.debug(`App: App has sent us: ${data}`)
                     } else if (messageBody.class == 'group') {
                         sendtoLW(ws.id,messageBody)
                     }
@@ -376,9 +374,13 @@ server.listen(443);
 logger.info(`The WebSocket server is running on port ${server.address().port}`)
 
 function RemoveClient (clientId) {
-    for (var i=0; i<AppClients.length; i++) {
-        if (AppClients[i].id == clientId) {
-            AppClients.splice(i,1)
+    if (webSockets['hub'].id == clientId) {
+        webSockets = []
+    } else {
+        for (var i=0; i<AppClients.length; i++) {
+            if (AppClients[i].id == clientId) {
+                AppClients.splice(i,1)
+            }
         }
     }
 }
@@ -414,8 +416,11 @@ function sendtoLW (clientId,message) {
 function sendtoHub (clientId,message) {
     waitingResponse[message.transactionId] = clientId
     if (webSockets['hub']) {
+        logger.debug(`Hub: Sending ${JSON.stringify(message)} to ${clientId}`)        
         webSockets['hub'].send(JSON.stringify(message))
-    }    
+    } else {
+        logger.error("Hub: Error Hub not connected")
+    }
 }
 
 process.on('SIGINT', function() {
