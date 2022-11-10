@@ -121,7 +121,7 @@ wss.getUniqueID = function () {
 wss.on("connection", (ws, req) => {
     ws.id = wss.getUniqueID();
     if (req.url == '/sockets') { // if hub connects, open new connection to LW
-        ws_lw.addEventListener('message', function (event) { // Messages from Hub ABI
+        ws_lw.addEventListener('message', function (event) { // Messages from Hub API
             const messageBody = JSON.parse(event.data);
             switch(messageBody.operation) {
                 case 'write':
@@ -129,7 +129,7 @@ wss.on("connection", (ws, req) => {
                     featureId=messageBody.items[0].payload.featureId
                     value=messageBody.items[0].payload.value
                     logger.info(`Hub API: LW has requested Feature ${featureId} to be set to ${value}`)
-                    ws.send(event.data)
+                    sendtoHub('LWAPI',messageBody)
                     break;
                 case 'authenticate':
                     logger.debug(`Hub API: LW has sent us: ${event.data}`);
@@ -139,11 +139,11 @@ wss.on("connection", (ws, req) => {
                     else {
                         logger.error("Hub API: Hub Authentication Failed")
                     }
-                    ws.send(event.data)
+                    sendtoHub('LWAPI',messageBody)
                     break;
                 default:
                     logger.info(`Hub API: LW has sent us: ${event.data}`);
-                    ws.send(event.data)
+                    sendtoHub('LWAPI',messageBody)
                     break;
             }
             
@@ -151,8 +151,8 @@ wss.on("connection", (ws, req) => {
         webSockets['hub'] = ws
         logger.info(`Hub: New Hub Connection from ${ws._socket.remoteAddress}`);
     }
-    if (req.url == '/') {
-        ws_lw_app.addEventListener('message', function (event) {
+    if (req.url == '/') { 
+        ws_lw_app.addEventListener('message', function (event) { // Messages from LW API
             const messageBody = JSON.parse(event.data);
             switch(messageBody.operation) {
                 case 'authenticate':
@@ -162,31 +162,51 @@ wss.on("connection", (ws, req) => {
                         logger.info("App Api: Successfully Authenticated with LW")
                         // Lets request groups from LW rather than waiting for them (if we restart the local API, the client doesnt request them)
                         if (groupId.length === 0) {
-                            var group_json='{"class":"user","operation":"rootGroups","version":1,"senderId":"29db9beb-fb3f-475c-929c-68eaa21ea80e","transactionId":1,"direction":"request","items":[{"itemId":1,"payload":{}}]}'
-                            ws_lw_app.send(group_json)
+                            var group_json='{"class":"user","operation":"rootGroups","version":1,"senderId":"29db9beb-fb3f-475c-929c-68eaa21ea80e","transactionId":0,"direction":"request","items":[{"itemId":0,"payload":{}}]}'
+                            sendtoLW(0,JSON.parse(group_json))
                         }
                     } else if (messageBody.items[0]["error"]["code"] == "200") {
                         logger.info("App Api: Already authenticated")
                     } else {
                         logger.info("App Api: Authentication Failed")
                     }
-                    if (webSockets['haclient']) {
-                        webSockets['haclient'].send(event.data)
-                    }
+                    if (typeof waitingResponse[messageBody.transactionId] !== 'undefined') {
+                        logger.info(`App Api: Received response from LW App for transaction ${messageBody.transactionId} sending to client ${waitingResponse[messageBody.transactionId]}`)
+                        sendtoClient(waitingResponse[messageBody.transactionId],messageBody)
+                    } else {
+                        logger.debug(`Hub: Received unexpected response ${event.data}`)
+                    }                    
                     break;
                 case 'rootGroups':
                     logger.debug(`App Api: LW App has sent us: ${event.data}`)
                     groupIds=messageBody.items[0].payload.groupIds[0]
                     groupId=groupIds.split('-')[0]
                     logger.info(`App Api: Group ID ${groupId} received`)
-                    if (webSockets['haclient']) {
-                        webSockets['haclient'].send(event.data)
-                    }
+                    if (messageBody.transactionId !== 0) {
+                        if (typeof waitingResponse[messageBody.transactionId] !== 'undefined') {
+                            logger.info(`App Api: Received response from LW App for transaction ${messageBody.transactionId} sending to client ${waitingResponse[messageBody.transactionId]}`)
+                            sendtoClient(waitingResponse[messageBody.transactionId],messageBody)
+                        } else {
+                            logger.debug(`App Api: Received unexpected response ${event.data}`)
+                        }
+                    }  
                     break;
-                case 'event': // ignore event from lightwave if group has been sent (we've already sent to client)
+                case 'event': // only send the event to the clients if we don't have a groupID (shouldnt happen now)
                     if (groupId.length === 0) {
                         logger.debug(`Hub API: LW has sent us: ${event.data}`);
-                        ws.send(event.data)
+                        sendAll(event.data)
+                    }
+                    break;
+                case 'read':
+                    if (messageBody.class == 'group') { //response to a group request
+                        if (messageBody.transactionId !== 0) {
+                            if (typeof waitingResponse[messageBody.transactionId] !== 'undefined') {
+                                logger.info(`App Api: Received response from LW App for transaction ${messageBody.transactionId} sending to client ${waitingResponse[messageBody.transactionId]}`)
+                                sendtoClient(waitingResponse[messageBody.transactionId],messageBody)
+                            } else {
+                                logger.debug(`App Api: Received unexpected response ${event.data}`)
+                            }
+                        }  
                     }
                     break;
                 default:
@@ -194,10 +214,10 @@ wss.on("connection", (ws, req) => {
                         lw_is_auth = false
                         logger.error("App Api: Error, not authenticated with LW")
                     }
-                    logger.debug(`App Api: LW has sent us: ${event.data}`);
-                    if (webSockets['haclient']) {
-                        webSockets['haclient'].send(event.data)
-                    }
+                    logger.error(`App Api: LW has sent us unhandled data: ${event.data}`);
+                    // if (webSockets['haclient']) {
+                    //     webSockets['haclient'].send(event.data)
+                    // }
                     break;
             }
         });
@@ -234,44 +254,31 @@ wss.on("connection", (ws, req) => {
                         response['items'].push(element)
                         responsejson = JSON.stringify(response);
                         if (groupId) { // can't send event without the GroupID so we'll need to get LW to do it
-                            // if (webSockets['haclient']) {
-                            //     webSockets['haclient'].send(responsejson)
-                            // } else {
-                            //     logger.info("No clients connected, not sending events")
-                            // }
                             sendAll(responsejson)
-                        } else { // not received groupId yet, send to LW API to deal with
-                            // ws_lw.send(data)
                         }
-			            ws_lw.send(data)
+			            sendtoLW(0,data)
                     });
                     break;
                 case 'write': // response from hub for feature write
                     response = messageBody
                     response.transactionId=response.items[0].itemId // Change transaction id back to the requested one (comes back in itemId)
                     logger.info(`Hub: Received response from hub for transaction ${response.transactionId} sending to client`)
-                    if (webSockets['haclient']) {
-                        webSockets['haclient'].send(JSON.stringify(response)) // respond to client
+                    if (typeof waitingResponse[response.transactionId] !== 'undefined') {
+                        logger.info(`Hub: Received response from hub for transaction ${response.transactionId} sending to client ${waitingResponse[response.transactionId]}`)
+                        sendtoClient(waitingResponse[response.transactionId],messageBody)
                     } else {
-                        logger.info("No clients connected, not sending events")
+                        logger.debug(`Hub: Received unexpected response ${data}`)
                     }
-                    ws_lw.send(data)
                     break;
                 case 'read':
                     response = messageBody
                     response.transactionId=response.items[0].itemId // Change transaction id back to the requested one (comes back in itemId)
                     if (typeof waitingResponse[response.transactionId] !== 'undefined') {
                         logger.info(`Hub: Received response from hub for transaction ${response.transactionId} sending to client ${waitingResponse[response.transactionId]}`)
-                        sendtoClient(waitingResponse[response.transactionId],response)
+                        sendtoClient(waitingResponse[response.transactionId],messageBody)
                     } else {
                         logger.debug(`Hub: Received unexpected response ${data}`)
                     }
-                    // if (webSockets['haclient']) {
-                    //     webSockets['haclient'].send(JSON.stringify(response)) // respond to client
-                    // } else {
-                    //     logger.info("No clients connected, not sending events")
-                    // }
-                    // ws_lw.send(data)
                     break;
                 default:
                     logger.debug(`Hub: Unhandled operation: ${data}`)
@@ -289,7 +296,7 @@ wss.on("connection", (ws, req) => {
                     logger.debug(`App Client Message: ${data}`)
                     app_auth = data
                     if (lw_is_auth == false) {
-                        sendtoClient("LWAPI",messageBody)
+                        sendtoLW(ws.id,messageBody)
                     } else { // tell the client it's authorised
                         auth_json = '{"version":1,"senderId":"1.ip=10=192=22=140*eu=west=1*compute*internal=82149","direction":"response","source":"_channel","items":[{"itemId":0,"success":true,"payload":{"workerUniqueId":"ip=10=192=22=140*eu=west=1*compute*internal=82149","serverName":"i-0b3c24bf89033f71e","handlerId":"user.7aa9ada8-9914-4f8f-9bd4-80f85593a54b.eb0d95dc-83f5-4b3c-9691-dcdbe9315987"}}],"class":"user","operation":"authenticate","transactionId":1}';
                         auth_json_parsed = JSON.parse(auth_json);
@@ -301,7 +308,6 @@ wss.on("connection", (ws, req) => {
                         logger.info('App: Sending Auth Response to App')
                         logger.debug(`App: Auth Response ${response_json}`)
                         sendtoClient(ws.id,auth_json_parsed)
-                        // webSockets['haclient'].send(response_json)
                     }               
                     break;
                 case 'read': // HA requesting state
@@ -318,11 +324,11 @@ wss.on("connection", (ws, req) => {
                         logger.info(`App: App has requested read on function ${featureId} Transaction ${messageBody.transactionId}`)
                         logger.debug(`App: App has sent us: ${data}`)
                     } else if (messageBody.class == 'group') {
-                        ws_lw_app.send(data)
+                        sendtoLW(ws.id,messageBody)
                     }
                     break;
                 case 'rootGroups': // proxy this
-                    ws_lw_app.send(data)
+                    sendtoLW(ws.id,messageBody)
                     break;
                 case 'write': // send direct to hub, bypassing Lightwave
                     // get Hub ID from feature
@@ -331,12 +337,9 @@ wss.on("connection", (ws, req) => {
                     // Only send the feature ID, not the groups or hub ID
                     message.items[0].payload.featureId=parseInt(message.items[0].payload.featureId.split("-")[1])
                     // We don't want to send the request if the hub isnt connected
-                    if (webSockets[hub]) {
-                        webSockets[hub].send(JSON.stringify(message))
-                    }
+                    sendtoHub(ws.id,message)
                     logger.info(`App: App has requested write on feature ${message.items[0].payload.featureId} Transaction ${messageBody.transactionId}`)
                     logger.debug(`App: App has sent us: ${data}`)
-                    // ws_lw_app.send(data)
                     break;                    
                 default:
                     logger.info(`App: App has sent us: ${data}`)
@@ -374,6 +377,11 @@ function sendtoClient (clientId,message) {
     if (success != true) {
         logger.error(`App: Client with ID ${clientId} not found`)
     }
+}
+
+function sendtoLW (clientId,message) {
+    waitingResponse[message.transactionId] = clientId
+    sendtoClient("LWAPI",message)
 }
 
 function sendtoHub (clientId,message) {
