@@ -15,6 +15,8 @@ if (local_only && groupId.length === 0) {
     throw ("Cannot run in local only mode without specifying group ID")
 }
 
+
+
 // Setup Logging
 const { transports, createLogger, format } = require('winston');
 
@@ -49,6 +51,17 @@ lw_hub_api_url = "wss://linkplus-pub-api.lightwaverf.com:443/sockets"
 
 // Get Local IP
 var ip = require("ip");
+const ipaddress = ip.address()
+
+// Initialise Transaction ID
+var localHubtransID = 1;
+
+// Initialise Hub Id Variable
+var hubId = ""
+
+// Initialise device and feature array
+var devices = []
+
 const { cli } = require('winston/lib/winston/config');
 
 // Set up Wait
@@ -254,13 +267,37 @@ wss.on("connection", (ws, req) => {
             logger.debug(`Hub: Hub has sent us: ${data}`)
             switch (operation) {
                 case 'authenticate':
-                    hub_auth = data
-                    logger.info("Hub: Authenticating with Lightwave")
-                    logger.debug(`Hub: Sending ${data} to LW`)
-                    ws_lw.send(data)
+                    hubId = messageBody.senderId
+                    if (local_only == false) {
+                        hub_auth = data
+                        logger.info("Hub: Authenticating with Lightwave")
+                        logger.debug(`Hub: Sending ${data} to LW`)
+                        ws_lw.send(data)
+                    } else {
+                        var response = {}
+                        response['version'] = messageBody.version
+                        response['senderId'] = "1.ip=" + ip.address()
+                        response['direction'] = "response"
+                        response['source'] = "webSocket"
+                        response['items'] = [];
+                        element = {}
+                        element['itemId'] = messageBody.items[0].itemId
+                        element['success'] = true;
+                        element['payload'] = {}
+                        element['payload']['workerUniqueId'] = ip.address()
+                        element['payload']['serverName'] = ip.address()
+                        element['payload']['connection'] = "accepted"
+                        response['items'].push(element)
+                        response['class'] = "system"
+                        response['operation'] = "authenticate"
+                        response['transactionId'] = messageBody.transactionId
+                        responsejson = JSON.stringify(response);
+                        sendtoHub('Local', response)
+                        requestItems()
+                    }
                     break;
                 case 'event':
-                    sendtoClient('LWHUBAPI', messageBody) // Send the original event to the HUB API
+                    if (local_only == false) { sendtoClient('LWHUBAPI', messageBody) }// Send the original event to the HUB API 
                     messageBody.items.forEach(element => {
                         logger.info(`Event received from Hub - Feature ${element['payload']['featureId']} - Value ${element['payload']['value']} `)
                         var response = {}
@@ -294,12 +331,24 @@ wss.on("connection", (ws, req) => {
                 case 'read':
                     clientId = messageBody.items[0].itemId
                     if (typeof waitingResponse[clientId] !== 'undefined') {
-                        logger.info(`Hub: Received response from hub for transaction ${clientId} sending to client ${waitingResponse[clientId]}`)
-                        // HA expects the transaction ID to be the same as itemId
-                        if (waitingResponse[clientId] != 'LWHUBAPI') { messageBody.transactionId = messageBody.items[0].itemId }
-                        sendtoClient(waitingResponse[clientId], messageBody)
+                        if (waitingResponse[clientId] == "Local") {
+                            logger.info(`Hub: Received device information for ${messageBody.items[0]['payload']['deviceId']}`)
+                            devices[messageBody.items[0]['payload']['deviceId']] = messageBody.items[0]['payload']
+                        } else {
+                            logger.info(`Hub: Received response from hub for transaction ${clientId} sending to client ${waitingResponse[clientId]}`)
+                            // HA expects the transaction ID to be the same as itemId
+                            if (waitingResponse[clientId] != 'LWHUBAPI') { messageBody.transactionId = messageBody.items[0].itemId }
+                            sendtoClient(waitingResponse[clientId], messageBody)
+                        }
                     } else {
                         logger.debug(`Hub: Received unexpected response ${data}`)
+                    }
+                    break;
+                case 'list':
+                    if (local_only == false) {
+                        sendtoClient('LWHUBAPI', messageBody)
+                    } else {
+                        getFeatures(messageBody['items'][0]['payload']['deviceIds'])
                     }
                     break;
                 default:
@@ -330,7 +379,7 @@ wss.on("connection", (ws, req) => {
                         response_json = JSON.stringify(auth_json_parsed);
                         logger.info('App: Sending Auth Response to App')
                         logger.debug(`App: Auth Response ${response_json}`)
-                        authClient(ws.id)^
+                        authClient(ws.id)
                         sendtoClient(ws.id, auth_json_parsed)
                     }
                     break;
@@ -346,7 +395,9 @@ wss.on("connection", (ws, req) => {
                         messageBody.items[0].payload.featureId = parseInt(featureId)
                         sendtoHub(ws.id, messageBody)
                     } else if (messageBody.class == 'group') {
-                        sendtoLW(ws.id, messageBody)
+                        if (local_only == false) { sendtoLW(ws.id, messageBody) } else {
+                            sendgroups(ws.id, messageBody);
+                        }
                     }
                     break;
                 case 'rootGroups': // proxy this if we've not already got the group ID
@@ -377,6 +428,11 @@ wss.on("connection", (ws, req) => {
                     logger.info(`App: App has requested write on feature ${message.items[0].payload.featureId} Transaction ${messageBody.transactionId}`)
                     logger.debug(`App: App has sent us: ${data}`)
                     break;
+                case 'tohub':
+                    message = messageBody
+                    message.operation = message.realoperation;
+                    delete message.realoperation
+                    sendtoHub(ws.id, message)
                 default:
                     logger.info(`App: App has sent us: ${data}`)
                     break;
@@ -396,6 +452,110 @@ wss.on("connection", (ws, req) => {
 });
 server.listen(443);
 logger.info(`The WebSocket server is running on port ${server.address().port}`)
+
+function sendgroups(clientid, messageBody) {
+    message = {};
+    message['version'] = 1;
+    message['senderId'] = "1.ip=" + ipaddress;
+    message['direction'] = "response";
+    message['source'] = "_channel";
+    message['items'] = [];
+    item = {};
+    item['itemId'] = messageBody['transactionId'];
+    item['success'] = true;
+    item['payload'] = {};
+    item['payload']['groupId'] = groupIds;
+    item['payload']['name'] = "My Group";
+    item['payload']['type'] = "root";
+    item['payload']['parents'] = [];
+    item['payload']['devices'] = {};
+    item['payload']['features'] = {};
+    devices.forEach(device => {
+        deviceid = groupId + "-" + device['deviceId'] + "-" + hubId + "+1";
+        item['payload']['devices'][deviceid] = {};
+        item['payload']['devices'][deviceid]['deviceId'] = deviceid;
+        item['payload']['devices'][deviceid]['name'] = device['name'];
+        item['payload']['devices'][deviceid]['paired'] = true;
+        item['payload']['devices'][deviceid]['productCode'] = device['productCode'];
+        if (device['createdTime'] > 0) {
+            createdDate = new Date(device['createdTime'] * 1000).toJSON();
+        } else createdDate = '';
+        item['payload']['devices'][deviceid]['createdDate'] = createdDate;
+        item['payload']['devices'][deviceid]['features'] = [];
+        Object.keys(device['features']).forEach(function (key) {
+            featureId = groupId + "-" + device['features'][key]['featureId'] + "-" + hubId + "+1";
+            // add features to device
+            item['payload']['devices'][deviceid]['features'].push(featureId);
+            // create feature
+            item['payload']['features'][featureId] = {};
+            item['payload']['features'][featureId]['featureId'] = featureId;
+            item['payload']['features'][featureId]['name'] = device['name'];
+            item['payload']['features'][featureId]['deviceId'] = deviceid;
+            item['payload']['features'][featureId]['groups'] = [groupIds];
+            item['payload']['features'][featureId]['createdDate'] = createdDate;
+            item['payload']['features'][featureId]['attributes'] = {};
+            item['payload']['features'][featureId]['attributes']['featureId'] = device['features'][key]['featureId'];
+            item['payload']['features'][featureId]['attributes']['writable'] = device['features'][key]['writable'];
+            item['payload']['features'][featureId]['attributes']['channel'] = device['features'][key]['channel'];
+            item['payload']['features'][featureId]['attributes']['type'] = device['features'][key]['type'];
+            item['payload']['features'][featureId]['attributes']['status'] = device['features'][key]['status'];
+            item['payload']['features'][featureId]['attributes']['name'] = device['name'];
+        });
+    })
+    message['items'].push(item)
+    message['class'] = "group";
+    message['operation'] = "read";
+    message['transactionId'] = messageBody['transactionId'];
+    sendtoClient(clientid, message)
+    logger.info('Local Hub: Sending groups to client')
+}
+
+
+function getHubTransactionId() {
+    Id = localHubtransID
+    localHubtransID++
+    return Id
+}
+
+function getFeatures(deviceIds) {
+    deviceIds.forEach(element => {
+        transID = getHubTransactionId()
+        message = {}
+        message['version'] = 1;
+        message['senderId'] = `1.ip=${ipaddress}`
+        message['transactionId'] = transID
+        message['direction'] = "request"
+        message['class'] = "device"
+        message['operation'] = "read"
+        message['items'] = []
+        item = {}
+        item['payload'] = {}
+        item['payload']['deviceId'] = element
+        item['itemId'] = transID
+        message['items'].push(item)
+        sendtoHub('Local', message)
+    })
+}
+
+function requestItems() {
+    transID = getHubTransactionId()
+    message = {}
+    message['version'] = 1;
+    message['senderId'] = `1.ip=${ipaddress}`
+    message['transactionId'] = transID
+    message['direction'] = "request"
+    message['class'] = "device"
+    message['operation'] = "list"
+    message['items'] = []
+    item = {}
+    item['payload'] = {}
+    item['payload']['destinationId'] = hubId.toString()
+    item['itemId'] = transID
+    message['items'].push(item)
+    logger.info('Local Hub: Requesting Items from Hub')
+    sendtoHub('Local', message)
+}
+
 
 function RemoveClient(clientId) {
     if (webSockets['hub'].id == clientId) {
