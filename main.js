@@ -4,6 +4,16 @@ var groupId = ''
 // Websocket Reconnect
 var reconnectInterval = 1000 * 5;
 
+// Get group ID from environment 
+var groupId = process.env.GROUP_ID || "";
+
+// local only mode 
+const local_only = process.env.LOCAL_ONLY || false;
+
+if (local_only && groupId.length === 0) {
+    throw("Cannot run in local only mode without specifying group ID")
+}
+
 // Setup Logging
 const {transports, createLogger, format} = require('winston');
 
@@ -299,11 +309,11 @@ wss.on("connection", (ws, req) => {
         }
         if (req.url == '/') { // Message from HA
             switch(operation) {
-                case 'authenticate': // proxy this
+                case 'authenticate': // proxy this if not local mode or already authd
                     logger.info('App Client: Requested Authenticate')
                     logger.debug(`App Client Message: ${data}`)
                     app_auth = data
-                    if (lw_is_auth == false) {
+                    if (lw_is_auth == false && local_only == false) {
                         sendtoLW(ws.id,messageBody)
                     } else { // tell the client it's authorised
                         auth_json = '{"version":1,"senderId":"1.ip=10=192=22=140*eu=west=1*compute*internal=82149","direction":"response","source":"_channel","items":[{"itemId":0,"success":true,"payload":{"workerUniqueId":"ip=10=192=22=140*eu=west=1*compute*internal=82149","serverName":"i-0b3c24bf89033f71e","handlerId":"user.7aa9ada8-9914-4f8f-9bd4-80f85593a54b.eb0d95dc-83f5-4b3c-9691-dcdbe9315987"}}],"class":"user","operation":"authenticate","transactionId":1}';
@@ -322,8 +332,6 @@ wss.on("connection", (ws, req) => {
                     }               
                     break;
                 case 'read': // HA requesting state
-                // To do - keep track of whether the request was from LW or App and send back to 
-                // relevant sender, not both
                     if (messageBody.class == 'feature') { // Send feature request direct to hub
                         logger.debug(`App: App has sent us: ${data}`)                        
                         // extract featureId from JSON
@@ -338,8 +346,22 @@ wss.on("connection", (ws, req) => {
                         sendtoLW(ws.id,messageBody)
                     }
                     break;
-                case 'rootGroups': // proxy this
+                case 'rootGroups': // proxy this if we've not already got the group ID
+                if (groupId.length === 0) {
                     sendtoLW(ws.id,messageBody)
+                } else {
+                    rootgroups_json = '{"version":1,"senderId":"1.ip=10=192=21=210*eu=west=1*compute*internal=23804","direction":"response","source":"_channel","items":[{"itemId":1,"success":true,"payload":{"groupIds":[""],"rootGroups":[{"rootGroupId":"","name":"My Group"}]}}],"class":"user","operation":"rootGroups","transactionId":1}';
+                    rootgroups_json_parsed = JSON.parse(rootgroups_json);
+                    rootgroups_json_parsed.transactionId = messageBody.transactionId
+                    rootgroups_json_parsed.items[0].itemId = messageBody.transactionId
+                    rootgroups_json_parsed.senderId = "1.ip=" + ip.address()
+                    rootgroups_json_parsed.items[0].payload.groupIds = groupId
+                    rootgroups_json_parsed.items[0].payload.rootGroups[0].rootGroupId = groupId
+                    response_json = JSON.stringify(rootgroups_json_parsed);
+                    logger.info('App: Sending Root Groups to App')
+                        logger.debug(`App: Root Groups ${response_json}`)
+                        sendtoClient(ws.id,rootgroups_json_parsed)
+                }
                     break;
                 case 'write': // send direct to hub, bypassing Lightwave
                     // get Hub ID from feature
