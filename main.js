@@ -485,7 +485,7 @@ function sendgroups(clientid, messageBody) {
         Object.keys(device['features']).forEach(function (key) {
             featureId = groupId + "-" + device['features'][key]['featureId'] + "-" + hubId + "+1";
             // add features to device
-            item['payload']['devices'][deviceid]['features'].push(featureId);
+            item['payload']['devices'][deviceid]['featureIds'].push(featureId);
             // create feature
             item['payload']['features'][featureId] = {};
             item['payload']['features'][featureId]['featureId'] = featureId;
