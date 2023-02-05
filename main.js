@@ -481,7 +481,7 @@ function sendgroups(clientid, messageBody) {
             createdDate = new Date(device['createdTime'] * 1000).toJSON();
         } else createdDate = '';
         item['payload']['devices'][deviceid]['createdDate'] = createdDate;
-        item['payload']['devices'][deviceid]['features'] = [];
+        item['payload']['devices'][deviceid]['featureIds'] = [];
         Object.keys(device['features']).forEach(function (key) {
             featureId = groupId + "-" + device['features'][key]['featureId'] + "-" + hubId + "+1";
             // add features to device
