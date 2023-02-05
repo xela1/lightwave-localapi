@@ -5,7 +5,8 @@ var groupId = ''
 var reconnectInterval = 1000 * 5;
 
 // Get group ID from environment 
-var groupId = process.env.GROUP_ID || "";
+var groupIds = process.env.GROUP_ID || "";
+if (groupIds.length > 0) { var groupId = groupIds.split('-')[0] }
 
 // local only mode 
 const local_only = process.env.LOCAL_ONLY || false;
@@ -357,8 +358,8 @@ wss.on("connection", (ws, req) => {
                         rootgroups_json_parsed.transactionId = messageBody.transactionId
                         rootgroups_json_parsed.items[0].itemId = messageBody.transactionId
                         rootgroups_json_parsed.senderId = "1.ip=" + ip.address()
-                        rootgroups_json_parsed.items[0].payload.groupIds = groupId
-                        rootgroups_json_parsed.items[0].payload.rootGroups[0].rootGroupId = groupId
+                        rootgroups_json_parsed.items[0].payload.groupIds = groupIds
+                        rootgroups_json_parsed.items[0].payload.rootGroups[0].rootGroupId = groupIds
                         response_json = JSON.stringify(rootgroups_json_parsed);
                         logger.info('App: Sending Root Groups to App')
                         logger.debug(`App: Root Groups ${response_json}`)
