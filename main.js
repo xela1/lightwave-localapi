@@ -358,7 +358,7 @@ wss.on("connection", (ws, req) => {
                         rootgroups_json_parsed.transactionId = messageBody.transactionId
                         rootgroups_json_parsed.items[0].itemId = messageBody.transactionId
                         rootgroups_json_parsed.senderId = "1.ip=" + ip.address()
-                        rootgroups_json_parsed.items[0].payload.groupIds = groupIds
+                        rootgroups_json_parsed.items[0].payload.groupIds[0] = groupIds
                         rootgroups_json_parsed.items[0].payload.rootGroups[0].rootGroupId = groupIds
                         response_json = JSON.stringify(rootgroups_json_parsed);
                         logger.info('App: Sending Root Groups to App')
