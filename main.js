@@ -275,6 +275,7 @@ wss.on("connection", (ws, req) => {
                         ws_lw.send(data)
                         requestItems()
                     } else {
+                        logger.info("Hub: Running in local mode, sending auth to Hub")
                         var response = {}
                         response['version'] = messageBody.version
                         response['senderId'] = "1.ip=" + ip.address()
