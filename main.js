@@ -395,7 +395,7 @@ wss.on("connection", (ws, req) => {
                         messageBody.items[0].payload.featureId = parseInt(featureId)
                         sendtoHub(ws.id, messageBody)
                     } else if (messageBody.class == 'group') {
-                        if (local_only == false) { sendtoLW(ws.id, messageBody) } else {
+                        if (local_only == false && ws._socket.remoteAddress != '::ffff:192.168.11.50') { sendtoLW(ws.id, messageBody) } else {
                             sendgroups(ws.id, messageBody);
                         }
                     }
@@ -468,10 +468,12 @@ function sendgroups(clientid, messageBody) {
     item['payload']['name'] = "My Group";
     item['payload']['type'] = "root";
     item['payload']['parents'] = [];
-    item['payload']['devices'] = {};
     item['payload']['features'] = {};
+    item['payload']['devices'] = {};
     devices.forEach(device => {
         deviceid = groupId + "-" + device['deviceId'] + "-" + hubId + "+1";
+        devicegroupIds = [];
+        console.log(devicegroupIds);
         item['payload']['devices'][deviceid] = {};
         item['payload']['devices'][deviceid]['deviceId'] = deviceid;
         item['payload']['devices'][deviceid]['name'] = device['name'];
@@ -491,16 +493,27 @@ function sendgroups(clientid, messageBody) {
             item['payload']['features'][featureId]['featureId'] = featureId;
             item['payload']['features'][featureId]['name'] = device['name'];
             item['payload']['features'][featureId]['deviceId'] = deviceid;
-            item['payload']['features'][featureId]['groups'] = [groupIds];
+            featuregroupIds = groupId + "-" + groupId.slice(0, 8) + (parseInt(groupId.slice(9, 15), 16) + device['deviceId']).toString(16) + (parseInt(groupId.slice(16), 16) + device['features'][key]['channel']).toString(16);
+            if (!devicegroupIds.includes(featuregroupIds)) {
+                devicegroupIds.push(featuregroupIds)
+            }
+            item['payload']['features'][featureId]['groups'] = [featuregroupIds];
             item['payload']['features'][featureId]['createdDate'] = createdDate;
             item['payload']['features'][featureId]['attributes'] = {};
-            item['payload']['features'][featureId]['attributes']['featureId'] = device['features'][key]['featureId'];
-            item['payload']['features'][featureId]['attributes']['writable'] = device['features'][key]['writable'];
-            item['payload']['features'][featureId]['attributes']['channel'] = device['features'][key]['channel'];
-            item['payload']['features'][featureId]['attributes']['type'] = device['features'][key]['type'];
-            item['payload']['features'][featureId]['attributes']['status'] = device['features'][key]['status'];
+            item['payload']['features'][featureId]['attributes'] = device['features'][key];
             item['payload']['features'][featureId]['attributes']['name'] = device['name'];
+            delete item['payload']['features'][featureId]['attributes']['value']
+
         });
+        const multifeatures = ["identify", "reset", "upgrade", "diagnostics", "periodOfBroadcast", "rgbColor"]
+        Object.keys(device['features']).forEach(function (key) {
+            if (multifeatures.includes(device['features'][key]['type'])) {
+                featureId = groupId + "-" + device['features'][key]['featureId'] + "-" + hubId + "+1";
+                item['payload']['features'][featureId]['groups'] = devicegroupIds;
+            }
+        });
+        item['payload']['devices'][deviceid]['featureSetGroupIds'] = [devicegroupIds];
+
     })
     message['items'].push(item)
     message['class'] = "group";
