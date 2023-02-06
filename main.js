@@ -273,6 +273,7 @@ wss.on("connection", (ws, req) => {
                         logger.info("Hub: Authenticating with Lightwave")
                         logger.debug(`Hub: Sending ${data} to LW`)
                         ws_lw.send(data)
+                        requestItems()
                     } else {
                         var response = {}
                         response['version'] = messageBody.version
@@ -345,10 +346,10 @@ wss.on("connection", (ws, req) => {
                     }
                     break;
                 case 'list':
-                    if (local_only == false) {
-                        sendtoClient('LWHUBAPI', messageBody)
-                    } else {
+                    if (waitingResponse[messageBody.items[0].itemId] == 'Local') {
                         getFeatures(messageBody['items'][0]['payload']['deviceIds'])
+                    } else {
+                        sendtoClient('LWHUBAPI', messageBody)
                     }
                     break;
                 default:
@@ -395,9 +396,9 @@ wss.on("connection", (ws, req) => {
                         messageBody.items[0].payload.featureId = parseInt(featureId)
                         sendtoHub(ws.id, messageBody)
                     } else if (messageBody.class == 'group') {
-                        if (local_only == false && ws._socket.remoteAddress != '::ffff:192.168.11.50') { sendtoLW(ws.id, messageBody) } else {
-                            sendgroups(ws.id, messageBody);
-                        }
+                        // if (local_only == false && ws._socket.remoteAddress != '::ffff:192.168.11.50') { sendtoLW(ws.id, messageBody) } else {
+                        sendgroups(ws.id, messageBody);
+                        // }
                     }
                     break;
                 case 'rootGroups': // proxy this if we've not already got the group ID
@@ -473,7 +474,6 @@ function sendgroups(clientid, messageBody) {
     devices.forEach(device => {
         deviceid = groupId + "-" + device['deviceId'] + "-" + hubId + "+1";
         devicegroupIds = [];
-        console.log(devicegroupIds);
         item['payload']['devices'][deviceid] = {};
         item['payload']['devices'][deviceid]['deviceId'] = deviceid;
         item['payload']['devices'][deviceid]['name'] = device['name'];
